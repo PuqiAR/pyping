@@ -3,6 +3,8 @@
 ![Python Version](https://img.shields.io/badge/python-3.7+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
+[![中文文档](https://img.shields.io/badge/文档-中文版-blue)](README_zh.md) [README_zh.md](README_zh.md)
+
 ## Features
 - Multi-protocol support (ICMP/TCP/UDP)
 - IPv4 & IPv6 dual-stack
