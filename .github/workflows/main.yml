@@ -1,42 +1,54 @@
+name: Build with Nuitka
+
+on:
+  push:
+    tags: ['v*']  # 只在打tag时触发
+  workflow_dispatch:  # 允许手动触发
+
 jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.10']
+        include:
+          - os: ubuntu-latest
+            artifact_name: linux
+          - os: macos-latest
+            artifact_name: macos
+            icon: --macos-create-app-bundle
+          - os: windows-latest
+            artifact_name: windows
 
     runs-on: ${{ matrix.os }}
-
+    
     steps:
-      - name: Check-out repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10' # Version range or exact version of a Python version to use, using SemVer's version range syntax
-          architecture: 'x64' # optional x64 or x86. Defaults to x64 if not specified
-          cache: 'pip'
-          cache-dependency-path: |
-            **/requirements*.txt
-
-      - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Build Executable
-        uses: Nuitka/Nuitka-Action@main
-        with:
-          nuitka-version: main
-          script-name: pyping.py
-          mode: app
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ runner.os }} Build
-          path: |
-            build/*.exe
-            build/*.bin
-            build/*.app/**/*
-            build/*.dist/**/*
-          include-hidden-files: true
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka
+        pip install -r requirements.txt
+        
+    - name: Build with Nuitka
+      run: |
+        python -m nuitka \
+          --standalone \
+          --onefile \
+          --follow-imports \
+          --remove-output \
+          ${{ matrix.icon }} \
+          --output-dir=dist/${{ matrix.artifact_name }} \
+          main.py  # 替换为你的入口文件
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.artifact_name }}-binary
+        path: dist/${{ matrix.artifact_name }}
