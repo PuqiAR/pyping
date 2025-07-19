@@ -2,8 +2,8 @@ name: Build and Release
 
 on:
   push:
-    tags: ['v*.*.*']  # 语义化版本标签触发
-  workflow_dispatch:    # 允许手动触发
+    tags: ['v*.*.*']
+  workflow_dispatch:
 
 env:
   UPX_VERSION: "4.2.1"
@@ -30,8 +30,6 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -39,25 +37,29 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
-    - name: Install UPX
-      if: matrix.os != 'macos-12'
+    - name: Install UPX (Linux)
+      if: runner.os == 'Linux'
       run: |
-        if [[ "$RUNNER_OS" == "Linux" ]]; then
-          wget https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-amd64_linux.tar.xz
-          tar -xf upx-*.tar.xz
-          echo "$PWD/upx-$UPX_VERSION-amd64_linux" >> $GITHUB_PATH
-        elif [[ "$RUNNER_OS" == "Windows" ]]; then
-          Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-win64.zip" -OutFile upx.zip
-          Expand-Archive upx.zip -DestinationPath .
-          echo "$PWD/upx-$UPX_VERSION-win64" >> $env:GITHUB_PATH
-        fi
+        wget https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-amd64_linux.tar.xz
+        tar -xf upx-*.tar.xz
+        echo "$PWD/upx-$UPX_VERSION-amd64_linux" >> $GITHUB_PATH
+
+    - name: Install UPX (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-win64.zip" -OutFile upx.zip
+        Expand-Archive upx.zip -DestinationPath .
+        echo "$PWD/upx-$UPX_VERSION-win64" >> $env:GITHUB_PATH
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install --no-cache-dir -r requirements.txt || echo "Optional dependencies failed"
+        pip install nuitka==2.0.0
+        pip install -r requirements.txt
 
-    - name: Build with Nuitka
+    - name: Build with Nuitka (Linux/macOS)
+      if: runner.os != 'Windows'
       run: |
         output_name="$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
         python -m nuitka \
@@ -68,22 +70,42 @@ jobs:
           --output-filename="$output_name" \
           --plugin-enable=upx \
           --lto=yes \
-          --assume-yes-for-downloads \
           pyping.py
 
-    - name: Create checksum
+    - name: Build with Nuitka (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $output_name = "$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
+        python -m nuitka `
+          --standalone `
+          --onefile `
+          --follow-imports `
+          --remove-output `
+          --output-filename="$output_name" `
+          --plugin-enable=upx `
+          --lto=yes `
+          pyping.py
+
+    - name: Create checksum (Linux/macOS)
+      if: runner.os != 'Windows'
       run: |
         mkdir -p dist
         cd dist
-        if [[ "$RUNNER_OS" == "Windows" ]]; then
-          Get-ChildItem | ForEach-Object {
-            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
-            "$($_.Name)  $hash" >> checksums.txt
-          }
-        else
-          shasum -a 256 * > checksums.txt
-        fi
+        shasum -a 256 * > checksums.txt
         cat checksums.txt
+
+    - name: Create checksum (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        mkdir dist -Force
+        cd dist
+        Get-ChildItem | ForEach-Object {
+          $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
+          "$($_.Name)  $hash" | Out-File -Append checksums.txt
+        }
+        Get-Content checksums.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -99,36 +121,21 @@ jobs:
       contents: write
 
     steps:
-    - name: Download all artifacts
+    - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
         path: artifacts
 
-    - name: Get version from tag
-      id: get-version
-      run: |
-        version=${GITHUB_REF#refs/tags/v}
-        echo "version=${version}" >> $GITHUB_OUTPUT
-
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v${{ steps.get-version.outputs.version }}
-        name: "$PROJECT_NAME ${{ steps.get-version.outputs.version }}"
+        tag_name: ${{ github.ref_name }}
+        name: "$PROJECT_NAME ${{ github.ref_name }}"
         body: |
           ### Build Artifacts
           - **Windows**: $PROJECT_NAME-windows-x64.exe
           - **macOS**: $PROJECT_NAME-macos-universal
           - **Linux**: $PROJECT_NAME-linux-x64
-
-          ### Verification
-          ```sh
-          # Linux/macOS
-          shasum -a 256 <file>
-
-          # Windows
-          certutil -hashfile <file> SHA256
-          ```
         files: |
           artifacts/**/*
         draft: false
