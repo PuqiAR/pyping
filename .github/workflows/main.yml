@@ -42,68 +42,66 @@ jobs:
         pip install nuitka==2.0.0
         pip install -r requirements.txt
 
+    - name: Create dist directory
+      run: mkdir -p dist
+
     - name: Build with Nuitka (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
-        # 确保 dist 目录存在
-        mkdir -p dist
-        
         output_name="$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
+        # 正确使用 Nuitka 输出选项
         python -m nuitka \
           --standalone \
           --onefile \
           --follow-imports \
           --remove-output \
-          --output-filename="dist/$output_name" \
           --lto=yes \
+          --output-dir=dist \
+          --output-filename="$output_name" \
           pyping.py
 
     - name: Build with Nuitka (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        # 确保 dist 目录存在
-        New-Item -ItemType Directory -Force -Path dist
-        
         $output_name = "$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
+        # 正确使用 Nuitka 输出选项
         python -m nuitka `
           --standalone `
           --onefile `
           --follow-imports `
           --remove-output `
-          --output-filename="dist/$output_name" `
           --lto=yes `
+          --output-dir=dist `
+          --output-filename="$output_name" `
           pyping.py
+
+    - name: Verify build output
+      run: |
+        echo "Checking dist directory contents:"
+        ls -la dist
+        if [ ! -f "dist/$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}" ]; then
+          echo "ERROR: Build output not found!"
+          exit 1
+        fi
 
     - name: Create checksum (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
         cd dist
-        # 检查文件是否存在
-        if [ -n "$(ls -A .)" ]; then
-          shasum -a 256 * > checksums.txt
-          cat checksums.txt
-        else
-          echo "No files found in dist directory"
-          exit 1
-        fi
+        shasum -a 256 * > checksums.txt
+        cat checksums.txt
 
     - name: Create checksum (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
         cd dist
-        # 检查文件是否存在
-        if (Get-ChildItem).Count -gt 0 {
-          Get-ChildItem | ForEach-Object {
-            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
-            "$($_.Name)  $hash" | Out-File -Append checksums.txt
-          }
-          Get-Content checksums.txt
-        } else {
-          Write-Error "No files found in dist directory"
-          exit 1
+        Get-ChildItem | ForEach-Object {
+          $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
+          "$($_.Name)  $hash" | Out-File -Append checksums.txt
         }
+        Get-Content checksums.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -146,6 +144,6 @@ jobs:
           certutil -hashfile <file> SHA256
           ```
         files: |
-          artifacts/**
+          artifacts/**/*
         draft: false
         prerelease: ${{ contains(github.ref, '-') }}
