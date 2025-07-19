@@ -8,6 +8,7 @@ on:
 env:
   UPX_VERSION: "4.2.1"
   PROJECT_NAME: "pyping"
+
 jobs:
   build:
     strategy:
@@ -30,7 +31,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # 获取完整历史用于版本检测
+        fetch-depth: 0
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -39,13 +40,13 @@ jobs:
         cache: 'pip'
 
     - name: Install UPX
-      if: contains(matrix.os, 'ubuntu') || contains(matrix.os, 'windows')
+      if: matrix.os != 'macos-12'
       run: |
         if [[ "$RUNNER_OS" == "Linux" ]]; then
           wget https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-amd64_linux.tar.xz
           tar -xf upx-*.tar.xz
           echo "$PWD/upx-$UPX_VERSION-amd64_linux" >> $GITHUB_PATH
-        else
+        elif [[ "$RUNNER_OS" == "Windows" ]]; then
           Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-win64.zip" -OutFile upx.zip
           Expand-Archive upx.zip -DestinationPath .
           echo "$PWD/upx-$UPX_VERSION-win64" >> $env:GITHUB_PATH
@@ -54,8 +55,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install nuitka==2.0.0
-        pip install -r requirements.txt
+        pip install --no-cache-dir -r requirements.txt || echo "Optional dependencies failed"
 
     - name: Build with Nuitka
       run: |
@@ -68,15 +68,18 @@ jobs:
           --output-filename="$output_name" \
           --plugin-enable=upx \
           --lto=yes \
-          ${{ contains(matrix.os, 'macos') && '--macos-create-app-bundle' || '' }} \
-          ${{ contains(matrix.os, 'windows') || '' }} \
-          main.py
+          --assume-yes-for-downloads \
+          pyping.py
 
     - name: Create checksum
       run: |
+        mkdir -p dist
         cd dist
         if [[ "$RUNNER_OS" == "Windows" ]]; then
-          CertUtil -hashfile * SHA256 > checksums.txt
+          Get-ChildItem | ForEach-Object {
+            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
+            "$($_.Name)  $hash" >> checksums.txt
+          }
         else
           shasum -a 256 * > checksums.txt
         fi
@@ -86,16 +89,14 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.platform }}
-        path: |
-          dist/*
-          !*.spec
+        path: dist/*
         retention-days: 3
 
   create-release:
     needs: build
     runs-on: ubuntu-22.04
     permissions:
-      contents: write  # 必需权限
+      contents: write
 
     steps:
     - name: Download all artifacts
@@ -115,16 +116,20 @@ jobs:
         tag_name: v${{ steps.get-version.outputs.version }}
         name: "$PROJECT_NAME ${{ steps.get-version.outputs.version }}"
         body: |
-          ### 多平台构建
-          - Windows x64
-          - macOS Universal
-          - Linux x64
-          
-          ### SHA256 Checksums
-          ```
-          ${{ join(needs.build.outputs.checksums, '\n') }}
+          ### Build Artifacts
+          - **Windows**: $PROJECT_NAME-windows-x64.exe
+          - **macOS**: $PROJECT_NAME-macos-universal
+          - **Linux**: $PROJECT_NAME-linux-x64
+
+          ### Verification
+          ```sh
+          # Linux/macOS
+          shasum -a 256 <file>
+
+          # Windows
+          certutil -hashfile <file> SHA256
           ```
         files: |
           artifacts/**/*
         draft: false
-        prerelease: ${{ contains(github.ref, '-') }}  # 如果标签包含'-'则标记为预发布
+        prerelease: ${{ contains(github.ref, '-') }}
