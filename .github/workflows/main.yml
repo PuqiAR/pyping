@@ -42,31 +42,14 @@ jobs:
         pip install nuitka==2.0.0
         pip install -r requirements.txt
 
-    # 创建 dist 目录 (平台无关方式)
-    - name: Create dist directory
-      shell: bash
-      run: mkdir -p dist
-
-    # macOS 专用设置
-    - name: Configure macOS build
-      if: runner.os == 'macOS'
+    # Linux 专用构建
+    - name: Linux Build
+      if: runner.os == 'Linux'
       run: |
-        # 确保必要的工具链可用
-        xcode-select --install || true
-        sudo xcodebuild -license accept
-
-    # 设置输出文件名 (使用矩阵参数)
-    - name: Set output filename
-      shell: bash
-      run: |
-        output_name="$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
-        echo "OUTPUT_NAME=$output_name" >> $GITHUB_ENV
-        echo "Using output name: $output_name"
-
-    # 通用构建命令
-    - name: Build with Nuitka
-      run: |
-        echo "Building $OUTPUT_NAME on $RUNNER_OS"
+        mkdir -p dist
+        output_name="pyping-linux-x64"
+        echo "Building $output_name"
+        
         python -m nuitka \
           --standalone \
           --onefile \
@@ -75,32 +58,94 @@ jobs:
           --lto=yes \
           --assume-yes-for-downloads \
           --output-dir=dist \
-          --output-filename="$OUTPUT_NAME" \
+          --output-filename="$output_name" \
+          pyping.py
+        
+        echo "Verifying build:"
+        ls -la dist
+        if [ -f "dist/$output_name" ]; then
+          echo "Build successful"
+        else
+          echo "Build failed"
+          exit 1
+        fi
+        
+        cd dist
+        shasum -a 256 * > checksums.txt
+        cat checksums.txt
+
+    # macOS 专用构建
+    - name: macOS Build
+      if: runner.os == 'macOS'
+      run: |
+        mkdir -p dist
+        output_name="pyping-macos-universal"
+        echo "Building $output_name"
+        
+        # 确保接受Xcode许可
+        sudo xcodebuild -license accept || true
+        
+        python -m nuitka \
+          --standalone \
+          --onefile \
+          --follow-imports \
+          --remove-output \
+          --lto=yes \
+          --assume-yes-for-downloads \
+          --output-dir=dist \
+          --output-filename="$output_name" \
           --show-scons \
           --show-progress \
           pyping.py
-
-    # 验证构建输出
-    - name: Verify build output
-      shell: bash
-      run: |
-        echo "Checking dist directory contents:"
+        
+        echo "Verifying build:"
         ls -la dist
-        if [ ! -f "dist/$OUTPUT_NAME" ]; then
-          echo "ERROR: Build output not found!"
-          exit 1
+        if [ -f "dist/$output_name" ]; then
+          echo "Build successful"
         else
-          echo "Build successful: dist/$OUTPUT_NAME"
+          echo "Build failed"
+          exit 1
         fi
-
-    # 创建校验和
-    - name: Create checksum
-      shell: bash
-      run: |
+        
         cd dist
         shasum -a 256 * > checksums.txt
-        echo "Checksums:"
         cat checksums.txt
+
+    # Windows 专用构建 (100% PowerShell)
+    - name: Windows Build
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path dist
+        $output_name = "pyping-windows-x64.exe"
+        Write-Host "Building $output_name"
+        
+        python -m nuitka `
+          --standalone `
+          --onefile `
+          --follow-imports `
+          --remove-output `
+          --lto=yes `
+          --assume-yes-for-downloads `
+          --output-dir=dist `
+          --output-filename="$output_name" `
+          pyping.py
+        
+        Write-Host "Verifying build:"
+        Get-ChildItem -Path dist
+        if (Test-Path -Path "dist\$output_name") {
+          Write-Host "Build successful"
+        } else {
+          Write-Host "Build failed"
+          exit 1
+        }
+        
+        Set-Location dist
+        Get-ChildItem | ForEach-Object {
+          $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
+          "$($_.Name)  $hash" | Out-File -Append checksums.txt
+        }
+        Get-Content checksums.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
