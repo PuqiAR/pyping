@@ -3,113 +3,142 @@ name: Build and Release
 on:
   push:
     tags: ['v*.*.*']
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+
+env:
+  PROJECT_NAME: "pyping"
+
 jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [ubuntu-22.04, macos-12, windows-2022]
+        python-version: ["3.10"]
         include:
-          - os: macos-latest
-            artifact_name: macos
-            output_name: pyping-macos
-          - os: ubuntu-latest
-            artifact_name: linux
-            output_name: pyping-linux
-          - os: windows-latest
-            artifact_name: windows
-            output_name: pyping-windows.exe
-
+          - os: ubuntu-22.04
+            platform: linux-x64
+            ext: ""
+          - os: macos-12
+            platform: macos-universal
+            ext: ""
+          - os: windows-2022
+            platform: windows-x64
+            ext: ".exe"
+    
     runs-on: ${{ matrix.os }}
-
+    
     steps:
-      - name: Check-out repository
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          architecture: 'x64'
-          cache: 'pip'
-          cache-dependency-path: |
-            **/requirements*.txt
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
 
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka==2.0.0
+        pip install -r requirements.txt
 
-      - name: Build Executable
-        uses: Nuitka/Nuitka-Action@main
-        with:
-          nuitka-version: stable
-          script-name: pyping.py
-          onefile: true
-          standalone: true
-          linux-keep-scons: false
-          windows-disable-console: false
-          macos-create-app-bundle: false
-          macos-target-arch: universal2
-          output-dir: dist
-          output-filename: ${{ matrix.output_name }}
+    # 创建 dist 目录 (平台无关方式)
+    - name: Create dist directory
+      shell: bash
+      run: mkdir -p dist
 
-      - name: Verify build output
-        run: |
-          echo "Checking dist directory contents:"
-          ls -la dist
-          if [ ! -f "dist/${{ matrix.output_name }}" ]; then
-            echo "ERROR: Build output not found!"
-            exit 1
-          fi
+    # macOS 专用设置
+    - name: Configure macOS build
+      if: runner.os == 'macOS'
+      run: |
+        # 确保必要的工具链可用
+        xcode-select --install || true
+        sudo xcodebuild -license accept
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}-build
-          path: dist/${{ matrix.output_name }}
-          retention-days: 3
+    # 设置输出文件名 (使用矩阵参数)
+    - name: Set output filename
+      shell: bash
+      run: |
+        output_name="$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
+        echo "OUTPUT_NAME=$output_name" >> $GITHUB_ENV
+        echo "Using output name: $output_name"
+
+    # 通用构建命令
+    - name: Build with Nuitka
+      run: |
+        echo "Building $OUTPUT_NAME on $RUNNER_OS"
+        python -m nuitka \
+          --standalone \
+          --onefile \
+          --follow-imports \
+          --remove-output \
+          --lto=yes \
+          --assume-yes-for-downloads \
+          --output-dir=dist \
+          --output-filename="$OUTPUT_NAME" \
+          --show-scons \
+          --show-progress \
+          pyping.py
+
+    # 验证构建输出
+    - name: Verify build output
+      shell: bash
+      run: |
+        echo "Checking dist directory contents:"
+        ls -la dist
+        if [ ! -f "dist/$OUTPUT_NAME" ]; then
+          echo "ERROR: Build output not found!"
+          exit 1
+        else
+          echo "Build successful: dist/$OUTPUT_NAME"
+        fi
+
+    # 创建校验和
+    - name: Create checksum
+      shell: bash
+      run: |
+        cd dist
+        shasum -a 256 * > checksums.txt
+        echo "Checksums:"
+        cat checksums.txt
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.platform }}
+        path: dist/
+        retention-days: 3
 
   create-release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
-      
+
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: '*-build'
-          merge-multiple: true
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        pattern: "*"
+        merge-multiple: true
 
-      - name: Get version from tag
-        id: get-version
-        run: |
-          version=${GITHUB_REF#refs/tags/v}
-          echo "version=${version}" >> $GITHUB_OUTPUT
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.get-version.outputs.version }}
-          name: "PyPing ${{ steps.get-version.outputs.version }}"
-          body: |
-            ### Multi-platform Build
-            
-            - **Windows**: pyping-windows.exe
-            - **macOS**: pyping-macos
-            - **Linux**: pyping-linux
-            
-            ### Verification
-            
-            ```sh
-            shasum -a 256 <file>
-            ```
-          files: |
-            artifacts/*
-          draft: false
-          prerelease: ${{ contains(github.ref, '-') }}
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: "$PROJECT_NAME ${{ github.ref_name }}"
+        body: |
+          ### Build Artifacts
+          - **Windows**: pyping-windows-x64.exe
+          - **macOS**: pyping-macos-universal
+          - **Linux**: pyping-linux-x64
+          
+          ### Verification
+          ```sh
+          shasum -a 256 <file>
+          ```
+        files: |
+          artifacts/**/*
+        draft: false
+        prerelease: ${{ contains(github.ref, '-') }}
