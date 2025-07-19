@@ -2,3 +2,4 @@ ping3==4.0.4
 tcppinglib==2.1.0
 dnspython==2.3.0
 ipaddress==1.0.23
+nuitka==2.0.0
