@@ -69,7 +69,7 @@ jobs:
           --plugin-enable=upx \
           --lto=yes \
           ${{ contains(matrix.os, 'macos') && '--macos-create-app-bundle' || '' }} \
-          ${{ contains(matrix.os, 'windows') && '--windows-icon-from-ico=icon.ico' || '' }} \
+          ${{ contains(matrix.os, 'windows') || '' }} \
           main.py
 
     - name: Create checksum
