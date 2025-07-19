@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 
 env:
-  UPX_VERSION: "4.2.1"
   PROJECT_NAME: "pyping"
 
 jobs:
@@ -37,21 +36,6 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
-    - name: Install UPX (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        wget https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-amd64_linux.tar.xz
-        tar -xf upx-*.tar.xz
-        echo "$PWD/upx-$UPX_VERSION-amd64_linux" >> $GITHUB_PATH
-
-    - name: Install UPX (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-win64.zip" -OutFile upx.zip
-        Expand-Archive upx.zip -DestinationPath .
-        echo "$PWD/upx-$UPX_VERSION-win64" >> $env:GITHUB_PATH
-
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -68,7 +52,6 @@ jobs:
           --follow-imports \
           --remove-output \
           --output-filename="$output_name" \
-          --plugin-enable=upx \
           --lto=yes \
           pyping.py
 
@@ -83,7 +66,6 @@ jobs:
           --follow-imports `
           --remove-output `
           --output-filename="$output_name" `
-          --plugin-enable=upx `
           --lto=yes `
           pyping.py
 
@@ -136,6 +118,15 @@ jobs:
           - **Windows**: $PROJECT_NAME-windows-x64.exe
           - **macOS**: $PROJECT_NAME-macos-universal
           - **Linux**: $PROJECT_NAME-linux-x64
+          
+          ### Verification
+          ```sh
+          # Linux/macOS
+          shasum -a 256 <file>
+          
+          # Windows
+          certutil -hashfile <file> SHA256
+          ```
         files: |
           artifacts/**/*
         draft: false
