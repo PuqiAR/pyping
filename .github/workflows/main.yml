@@ -45,13 +45,16 @@ jobs:
     - name: Build with Nuitka (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
+        # 确保 dist 目录存在
+        mkdir -p dist
+        
         output_name="$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
         python -m nuitka \
           --standalone \
           --onefile \
           --follow-imports \
           --remove-output \
-          --output-filename="$output_name" \
+          --output-filename="dist/$output_name" \
           --lto=yes \
           pyping.py
 
@@ -59,41 +62,54 @@ jobs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
+        # 确保 dist 目录存在
+        New-Item -ItemType Directory -Force -Path dist
+        
         $output_name = "$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
         python -m nuitka `
           --standalone `
           --onefile `
           --follow-imports `
           --remove-output `
-          --output-filename="$output_name" `
+          --output-filename="dist/$output_name" `
           --lto=yes `
           pyping.py
 
     - name: Create checksum (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
-        mkdir -p dist
         cd dist
-        shasum -a 256 * > checksums.txt
-        cat checksums.txt
+        # 检查文件是否存在
+        if [ -n "$(ls -A .)" ]; then
+          shasum -a 256 * > checksums.txt
+          cat checksums.txt
+        else
+          echo "No files found in dist directory"
+          exit 1
+        fi
 
     - name: Create checksum (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        mkdir dist -Force
         cd dist
-        Get-ChildItem | ForEach-Object {
-          $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
-          "$($_.Name)  $hash" | Out-File -Append checksums.txt
+        # 检查文件是否存在
+        if (Get-ChildItem).Count -gt 0 {
+          Get-ChildItem | ForEach-Object {
+            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
+            "$($_.Name)  $hash" | Out-File -Append checksums.txt
+          }
+          Get-Content checksums.txt
+        } else {
+          Write-Error "No files found in dist directory"
+          exit 1
         }
-        Get-Content checksums.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.platform }}
-        path: dist/*
+        path: dist/
         retention-days: 3
 
   create-release:
@@ -107,6 +123,8 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: artifacts
+        pattern: "*"
+        merge-multiple: true
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
@@ -128,6 +146,6 @@ jobs:
           certutil -hashfile <file> SHA256
           ```
         files: |
-          artifacts/**/*
+          artifacts/**
         draft: false
         prerelease: ${{ contains(github.ref, '-') }}
