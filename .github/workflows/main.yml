@@ -49,13 +49,13 @@ jobs:
       if: runner.os != 'Windows'
       run: |
         output_name="$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
-        # 正确使用 Nuitka 输出选项
         python -m nuitka \
           --standalone \
           --onefile \
           --follow-imports \
           --remove-output \
           --lto=yes \
+          --assume-yes-for-downloads \
           --output-dir=dist \
           --output-filename="$output_name" \
           pyping.py
@@ -65,13 +65,14 @@ jobs:
       shell: pwsh
       run: |
         $output_name = "$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
-        # 正确使用 Nuitka 输出选项
+        # 添加 --assume-yes-for-downloads 自动确认下载
         python -m nuitka `
           --standalone `
           --onefile `
           --follow-imports `
           --remove-output `
           --lto=yes `
+          --assume-yes-for-downloads `
           --output-dir=dist `
           --output-filename="$output_name" `
           pyping.py
