@@ -42,18 +42,27 @@ jobs:
         pip install nuitka==2.0.0
         pip install -r requirements.txt
 
-    - name: Create dist directory
+    # Linux/macOS 专用步骤
+    - name: Prepare Linux/macOS environment
+      if: runner.os != 'Windows'
       run: |
-        if [ "$RUNNER_OS" = "Windows" ]; then
-          mkdir dist
-        else
-          mkdir -p dist
-        fi
+        mkdir -p dist
+        output_name="$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
+        echo "OUTPUT_NAME=$output_name" >> $GITHUB_ENV
 
+    # Windows 专用步骤
+    - name: Prepare Windows environment
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path dist
+        $output_name = "$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
+        Write-Output "OUTPUT_NAME=$output_name" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+    # Linux/macOS 构建
     - name: Build with Nuitka (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
-        output_name="$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
         python -m nuitka \
           --standalone \
           --onefile \
@@ -62,14 +71,14 @@ jobs:
           --lto=yes \
           --assume-yes-for-downloads \
           --output-dir=dist \
-          --output-filename="$output_name" \
+          --output-filename="$OUTPUT_NAME" \
           pyping.py
 
+    # Windows 构建
     - name: Build with Nuitka (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        $output_name = "$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
         python -m nuitka `
           --standalone `
           --onefile `
@@ -78,30 +87,33 @@ jobs:
           --lto=yes `
           --assume-yes-for-downloads `
           --output-dir=dist `
-          --output-filename="$output_name" `
+          --output-filename="$env:OUTPUT_NAME" `
           pyping.py
 
+    # Linux/macOS 验证
     - name: Verify build output (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
         echo "Checking dist directory contents:"
         ls -la dist
-        if [ ! -f "dist/$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}" ]; then
+        if [ ! -f "dist/$OUTPUT_NAME" ]; then
           echo "ERROR: Build output not found!"
           exit 1
         fi
 
+    # Windows 验证
     - name: Verify build output (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
         Write-Host "Checking dist directory contents:"
         Get-ChildItem -Path dist
-        if (-not (Test-Path -Path "dist\$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}")) {
+        if (-not (Test-Path -Path "dist\$env:OUTPUT_NAME")) {
           Write-Error "ERROR: Build output not found!"
           exit 1
         }
 
+    # Linux/macOS 校验和
     - name: Create checksum (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
@@ -109,6 +121,7 @@ jobs:
         shasum -a 256 * > checksums.txt
         cat checksums.txt
 
+    # Windows 校验和
     - name: Create checksum (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
