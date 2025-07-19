@@ -1,54 +1,130 @@
-name: Build with Nuitka
+name: Build and Release
 
 on:
   push:
-    tags: ['v*']  # 只在打tag时触发
-  workflow_dispatch:  # 允许手动触发
+    tags: ['v*.*.*']  # 语义化版本标签触发
+  workflow_dispatch:    # 允许手动触发
 
+env:
+  UPX_VERSION: "4.2.1"
+  PROJECT_NAME: "pyping"
 jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.10']
+        os: [ubuntu-22.04, macos-12, windows-2022]
+        python-version: ["3.10"]
         include:
-          - os: ubuntu-latest
-            artifact_name: linux
-          - os: macos-latest
-            artifact_name: macos
-            icon: --macos-create-app-bundle
-          - os: windows-latest
-            artifact_name: windows
-
+          - os: ubuntu-22.04
+            platform: linux-x64
+            ext: ""
+          - os: macos-12
+            platform: macos-universal
+            ext: ""
+          - os: windows-2022
+            platform: windows-x64
+            ext: ".exe"
+    
     runs-on: ${{ matrix.os }}
     
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整历史用于版本检测
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-    
+        cache: 'pip'
+
+    - name: Install UPX
+      if: contains(matrix.os, 'ubuntu') || contains(matrix.os, 'windows')
+      run: |
+        if [[ "$RUNNER_OS" == "Linux" ]]; then
+          wget https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-amd64_linux.tar.xz
+          tar -xf upx-*.tar.xz
+          echo "$PWD/upx-$UPX_VERSION-amd64_linux" >> $GITHUB_PATH
+        else
+          Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v$UPX_VERSION/upx-$UPX_VERSION-win64.zip" -OutFile upx.zip
+          Expand-Archive upx.zip -DestinationPath .
+          echo "$PWD/upx-$UPX_VERSION-win64" >> $env:GITHUB_PATH
+        fi
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install nuitka
+        pip install nuitka==2.0.0
         pip install -r requirements.txt
-        
+
     - name: Build with Nuitka
       run: |
+        output_name="$PROJECT_NAME-${{ matrix.platform }}${{ matrix.ext }}"
         python -m nuitka \
           --standalone \
           --onefile \
           --follow-imports \
           --remove-output \
-          ${{ matrix.icon }} \
-          --output-dir=dist/${{ matrix.artifact_name }} \
-          main.py  # 替换为你的入口文件
-        
-    - name: Upload artifact
-      uses: actions/upload-artifact@v3
+          --output-filename="$output_name" \
+          --plugin-enable=upx \
+          --lto=yes \
+          ${{ contains(matrix.os, 'macos') && '--macos-create-app-bundle' || '' }} \
+          ${{ contains(matrix.os, 'windows') && '--windows-icon-from-ico=icon.ico' || '' }} \
+          main.py
+
+    - name: Create checksum
+      run: |
+        cd dist
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          CertUtil -hashfile * SHA256 > checksums.txt
+        else
+          shasum -a 256 * > checksums.txt
+        fi
+        cat checksums.txt
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.artifact_name }}-binary
-        path: dist/${{ matrix.artifact_name }}
+        name: ${{ matrix.platform }}
+        path: |
+          dist/*
+          !*.spec
+        retention-days: 3
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write  # 必需权限
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Get version from tag
+      id: get-version
+      run: |
+        version=${GITHUB_REF#refs/tags/v}
+        echo "version=${version}" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ steps.get-version.outputs.version }}
+        name: "$PROJECT_NAME ${{ steps.get-version.outputs.version }}"
+        body: |
+          ### 多平台构建
+          - Windows x64
+          - macOS Universal
+          - Linux x64
+          
+          ### SHA256 Checksums
+          ```
+          ${{ join(needs.build.outputs.checksums, '\n') }}
+          ```
+        files: |
+          artifacts/**/*
+        draft: false
+        prerelease: ${{ contains(github.ref, '-') }}  # 如果标签包含'-'则标记为预发布
