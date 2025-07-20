@@ -65,7 +65,9 @@ jobs:
         VERSION="${{ steps.version.outputs.version }}"
         output_name="pyping-linux-x64-$VERSION"
         
-        CERT_PATH=$(python -c "import requests; print(requests.certs.where())")
+        # 获取证书路径
+        CERT_PATH=$(python -c "import certifi; print(certifi.where())")
+        SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
         
         python -m nuitka \
           --standalone \
@@ -76,11 +78,9 @@ jobs:
           --include-package=tcppinglib \
           --include-package=requests \
           --include-package=tqdm \
-          --include-package=idna \
-          --include-package=urllib3 \
-          --include-package=charset_normalizer \
           --include-package=certifi \
-          --include-data-file=$CERT_PATH=requests/cacert.pem \
+          --include-data-file=$CERT_PATH=certifi/cacert.pem \
+          --include-data-dir=$SITE_PACKAGES/certifi=certifi \
           --remove-output \
           --lto=yes \
           --assume-yes-for-downloads \
@@ -100,7 +100,9 @@ jobs:
         $VERSION = "${{ steps.version.outputs.version }}"
         $output_name = "pyping-windows-x64-$VERSION.exe"
         
-        $CERT_PATH = python -c "import requests; print(requests.certs.where())"
+        # 获取证书路径
+        $CERT_PATH = python -c "import certifi; print(certifi.where())"
+        $SITE_PACKAGES = python -c "import site; print(site.getsitepackages()[0])"
         
         python -m nuitka `
           --standalone `
@@ -111,11 +113,9 @@ jobs:
           --include-package=tcppinglib `
           --include-package=requests `
           --include-package=tqdm `
-          --include-package=idna `
-          --include-package=urllib3 `
-          --include-package=charset_normalizer `
           --include-package=certifi `
-          --include-data-file="$CERT_PATH=requests/cacert.pem" `
+          --include-data-file="$CERT_PATH=certifi/cacert.pem" `
+          --include-data-dir="$SITE_PACKAGES\certifi=certifi" `
           --remove-output `
           --lto=yes `
           --assume-yes-for-downloads `
