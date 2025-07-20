@@ -44,7 +44,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         mkdir -p dist
-        output_name="pyping-linux-x64"
+        output_name="pyping-linux-x64.bin"
         echo "Building $output_name"
         
         python -m nuitka \
