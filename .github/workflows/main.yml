@@ -12,7 +12,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-22.04, windows-2022]  # 仅保留 Linux 和 Windows
+        os: [ubuntu-22.04, windows-2022]
         python-version: ["3.10"]
         include:
           - os: ubuntu-22.04
@@ -27,6 +27,21 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Extract version from tag
+      if: startsWith(github.ref, 'refs/tags/')
+      id: extract-version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Extracted version: ${VERSION}"
+
+    - name: Set default version for manual trigger
+      if: github.event_name == 'workflow_dispatch'
+      id: set-default-version
+      run: |
+        echo "version=0.0.0" >> $GITHUB_OUTPUT
+        echo "Using default version for manual build"
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -39,12 +54,13 @@ jobs:
         pip install nuitka==2.0.0
         pip install -r requirements.txt
 
-    # Linux 专用构建 (保持不变)
+    # Linux build
     - name: Linux Build
       if: runner.os == 'Linux'
       run: |
         mkdir -p dist
-        output_name="pyping-linux-x64.bin"
+        VERSION="${{ steps.extract-version.outputs.version || steps.set-default-version.outputs.version }}"
+        output_name="pyping-linux-x64-$VERSION"
         echo "Building $output_name"
         
         python -m nuitka \
@@ -71,13 +87,14 @@ jobs:
         shasum -a 256 * > checksums.txt
         cat checksums.txt
 
-    # Windows 专用构建 (保持不变)
+    # Windows build
     - name: Windows Build
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Force -Path dist
-        $output_name = "pyping-windows-x64.exe"
+        $VERSION = "${{ steps.extract-version.outputs.version || steps.set-default-version.outputs.version }}"
+        $output_name = "pyping-windows-x64-$VERSION.exe"
         Write-Host "Building $output_name"
         
         python -m nuitka `
@@ -128,15 +145,25 @@ jobs:
         pattern: "*"
         merge-multiple: true
 
+    - name: Get version for release name
+      id: get-version
+      run: |
+        if [ "$GITHUB_REF_TYPE" == "tag" ]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+        else
+          VERSION="0.0.0"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        name: "pyping ${{ github.ref_name }}"
+        name: "PyPing ${{ steps.get-version.outputs.version }}"
         body: |
           ### Build Artifacts
-          - **Windows**: pyping-windows-x64.exe
-          - **Linux**: pyping-linux-x64
+          - **Windows**: pyping-windows-x64-${{ steps.get-version.outputs.version }}.exe
+          - **Linux**: pyping-linux-x64-${{ steps.get-version.outputs.version }}
           
           ### Verification
           ```sh
