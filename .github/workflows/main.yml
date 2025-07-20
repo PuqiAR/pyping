@@ -1,3 +1,63 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Version tag (e.g. v1.0.0), leave empty for test build'
+        required: false
+        default: ''
+
+env:
+  PROJECT_NAME: "pyping"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+        python-version: ["3.10"]
+        include:
+          - os: ubuntu-22.04
+            platform: linux-x64
+            ext: ""
+          - os: windows-2022
+            platform: windows-x64
+            ext: ".exe"
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Determine version
+      id: version
+      shell: bash
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version_tag }}" ]]; then
+          VERSION="${{ github.event.inputs.version_tag }}"
+          VERSION="${VERSION//v/}"
+        elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          VERSION="${GITHUB_REF#refs/tags/v}"
+        else
+          VERSION="0.0.0"
+        fi
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka==2.0.0
+        pip install -r requirements.txt
+
     - name: Linux Build
       if: runner.os == 'Linux'
       run: |
@@ -66,3 +126,54 @@
           $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
           "$($_.Name)  $hash" | Out-File -Append checksums.txt
         }
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.platform }}
+        path: dist/
+        retention-days: 3
+
+  create-release:
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        pattern: "*"
+        merge-multiple: true
+
+    - name: Get release version
+      id: release-version
+      shell: bash
+      run: |
+        VERSION="${GITHUB_REF#refs/tags/v}"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: "PyPing ${{ steps.release-version.outputs.version }}"
+        body: |
+          ### Build Artifacts
+          - **Windows**: pyping-windows-x64-${{ steps.release-version.outputs.version }}.exe
+          - **Linux**: pyping-linux-x64-${{ steps.release-version.outputs.version }}
+          
+          ### Verification
+          ```sh
+          # Linux
+          shasum -a 256 <file>
+          
+          # Windows
+          certutil -hashfile <file> SHA256
+          ```
+        files: |
+          artifacts/**/*
+        draft: false
+        prerelease: ${{ contains(github.ref, '-') }}
