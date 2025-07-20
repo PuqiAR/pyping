@@ -7,6 +7,9 @@ import ipaddress
 import signal
 import struct
 
+
+version = '0.0.7'
+
 from sys import exit as sys_exit
 from dataclasses import dataclass
 from typing import Optional, Union, List
@@ -292,7 +295,7 @@ def ping_main(info: PingInfo, count: Union[int, bool], custom_dns_addr: Optional
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        prog='Pyping',
+        prog='PyPing',
         description='A network testing tool supporting ICMP, TCP and UDP',
         epilog='Copyright©PuqiAR, 2025'
     )
@@ -322,6 +325,8 @@ def main() -> int:
     
     parser.add_argument('-i', '--interval', type=float, default=0.5,
                        help='Interval between pings in seconds (default: 0.5)')
+    
+    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {version}', help='Show version and exit')
     
     args = parser.parse_args()
     
