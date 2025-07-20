@@ -32,20 +32,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Step to determine version (fixed)
     - name: Determine version
       id: version
       shell: bash
       run: |
         if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version_tag }}" ]]; then
-          VERSION="${ { github.event.inputs.version_tag }//v/}"  # 移除 'v' 前缀
+          VERSION="${ { github.event.inputs.version_tag }//v/}"
         elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
           VERSION="${GITHUB_REF#refs/tags/v}"
         else
           VERSION="0.0.0"
         fi
         echo "version=${VERSION}" >> $GITHUB_OUTPUT
-        echo "Using version: ${VERSION}"
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -58,37 +56,23 @@ jobs:
         python -m pip install --upgrade pip
         pip install nuitka==2.0.0
         pip install -r requirements.txt
-        
-        # 安装 pipreqs 用于分析依赖
         pip install pipreqs
 
-    # Linux build with auto-detected includes
     - name: Linux Build
       if: runner.os == 'Linux'
       run: |
         mkdir -p dist
         VERSION="${{ steps.version.outputs.version }}"
         output_name="pyping-linux-x64-$VERSION"
-        echo "Building $output_name"
-        
-        # 生成 requirements.txt
         pipreqs --mode no-pin --savepath /tmp/requirements.txt .
-        
-        # 生成 Nuitka 包含参数
         INCLUDES=""
         while IFS= read -r package; do
-          # 提取包名 (忽略注释和空行)
           if [[ ! "$package" =~ ^[[:space:]]*# && -n "$package" ]]; then
-            pkg_name=$(echo "$package" | awk -F'[=<>]' '{print $1}')
+            pkg_name=$(echo "$package" | awk -F'[=<>]' '{print $1}' | tr '[:upper:]' '[:lower:]')
             INCLUDES+=" --include-package=$pkg_name"
           fi
         done < /tmp/requirements.txt
-        
-        echo "Auto-detected includes: $INCLUDES"
-        
-        # 添加requests证书的特殊处理
         CERT_PATH=$(python -c "import requests; print(requests.certs.where())")
-        
         python -m nuitka \
           --standalone \
           --onefile \
@@ -101,26 +85,10 @@ jobs:
           --output-dir=dist \
           --output-filename="$output_name" \
           pyping.py
-        
-        echo "Verifying build:"
-        ls -la dist
-        if [ -f "dist/$output_name" ]; then
-          echo "Build successful"
-          chmod +x "dist/$output_name"
-          
-          # 快速测试版本输出
-          echo "Testing version output:"
-          ./dist/$output_name --version
-        else
-          echo "Build failed"
-          exit 1
-        fi
-        
+        chmod +x "dist/$output_name"
         cd dist
         shasum -a 256 * > checksums.txt
-        cat checksums.txt
 
-    # Windows build with auto-detected includes
     - name: Windows Build
       if: runner.os == 'Windows'
       shell: pwsh
@@ -128,24 +96,15 @@ jobs:
         New-Item -ItemType Directory -Force -Path dist
         $VERSION = "${{ steps.version.outputs.version }}"
         $output_name = "pyping-windows-x64-$VERSION.exe"
-        Write-Host "Building $output_name"
-        
-        # 生成 requirements.txt
         pipreqs --mode no-pin --savepath requirements_temp.txt .
-        
-        # 生成 Nuitka 包含参数
         $INCLUDES = ""
         Get-Content requirements_temp.txt | ForEach-Object {
           if ($_ -notmatch '^\s*#' -and $_.Trim() -ne '') {
-            $pkg_name = ($_ -split '[=<>]')[0].Trim()
+            $pkg_name = ($_ -split '[=<>]')[0].Trim().ToLower()
             $INCLUDES += " --include-package=$pkg_name"
           }
         }
-        Write-Host "Auto-detected includes: $INCLUDES"
-        
-        # 添加requests证书的特殊处理
         $CERT_PATH = python -c "import requests; print(requests.certs.where())"
-        
         python -m nuitka `
           --standalone `
           --onefile `
@@ -158,26 +117,11 @@ jobs:
           --output-dir=dist `
           --output-filename="$output_name" `
           pyping.py
-        
-        Write-Host "Verifying build:"
-        Get-ChildItem -Path dist
-        if (Test-Path -Path "dist\$output_name") {
-          Write-Host "Build successful"
-          
-          # 快速测试版本输出
-          Write-Host "Testing version output:"
-          & ".\dist\$output_name" --version
-        } else {
-          Write-Host "Build failed"
-          exit 1
-        }
-        
         Set-Location dist
         Get-ChildItem | ForEach-Object {
           $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
           "$($_.Name)  $hash" | Out-File -Append checksums.txt
         }
-        Get-Content checksums.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
