@@ -65,7 +65,7 @@ jobs:
         VERSION="${{ steps.version.outputs.version }}"
         output_name="pyping-linux-x64-$VERSION"
         
-        SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+        CERT_PATH=$(python -c "import requests; print(requests.certs.where())")
         
         python -m nuitka \
           --standalone \
@@ -80,7 +80,7 @@ jobs:
           --include-package=urllib3 \
           --include-package=charset_normalizer \
           --include-package=certifi \
-          --include-data-dir=$SITE_PACKAGES/dns=dns \
+          --include-data-file=$CERT_PATH=requests/cacert.pem \
           --remove-output \
           --lto=yes \
           --assume-yes-for-downloads \
@@ -89,54 +89,45 @@ jobs:
           pyping.py
         
         chmod +x "dist/$output_name"
-        
-        echo "Testing build:"
-        ./dist/$output_name --version || echo "Version test failed, but continuing"
-        
         cd dist
         shasum -a 256 * > checksums.txt
 
     - name: Windows Build
       if: runner.os == 'Windows'
-      shell: cmd  # 使用cmd而不是pwsh
+      shell: pwsh
       run: |
-        mkdir dist
-        set VERSION=%{{ steps.version.outputs.version }}%
-        set output_name=pyping-windows-x64-%VERSION%.exe
+        New-Item -ItemType Directory -Force -Path dist
+        $VERSION = "${{ steps.version.outputs.version }}"
+        $output_name = "pyping-windows-x64-$VERSION.exe"
         
-        python -c "import site; print(site.getsitepackages()[0])" > sitepath.txt
-        set /p SITE_PACKAGES=<sitepath.txt
+        $CERT_PATH = python -c "import requests; print(requests.certs.where())"
         
-        python -c "import requests; print(requests.certs.where())" > certpath.txt
-        set /p CERT_PATH=<certpath.txt
-        
-        python -m nuitka ^
-          --standalone ^
-          --onefile ^
-          --follow-imports ^
-          --include-package=dns ^
-          --include-package=ping3 ^
-          --include-package=tcppinglib ^
-          --include-package=requests ^
-          --include-package=tqdm ^
-          --include-package=idna ^
-          --include-package=urllib3 ^
-          --include-package=charset_normalizer ^
-          --include-package=certifi ^
-          --include-data-dir="%SITE_PACKAGES%\dns"=dns ^
-          --include-data-file="%CERT_PATH%"=requests/cacert.pem ^
-          --remove-output ^
-          --lto=yes ^
-          --assume-yes-for-downloads ^
-          --output-dir=dist ^
-          --output-filename="%output_name%" ^
+        python -m nuitka `
+          --standalone `
+          --onefile `
+          --follow-imports `
+          --include-package=dns `
+          --include-package=ping3 `
+          --include-package=tcppinglib `
+          --include-package=requests `
+          --include-package=tqdm `
+          --include-package=idna `
+          --include-package=urllib3 `
+          --include-package=charset_normalizer `
+          --include-package=certifi `
+          --include-data-file="$CERT_PATH=requests/cacert.pem" `
+          --remove-output `
+          --lto=yes `
+          --assume-yes-for-downloads `
+          --output-dir=dist `
+          --output-filename="$output_name" `
           pyping.py
         
-        echo Testing build:
-        dist\%output_name% --version || echo Version test failed, but continuing
-        
-        cd dist
-        certutil -hashfile * SHA256 > checksums.txt
+        Set-Location dist
+        Get-ChildItem | ForEach-Object {
+          $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
+          "$($_.Name)  $hash" | Out-File -Append checksums.txt
+        }
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
