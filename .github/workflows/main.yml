@@ -65,10 +65,6 @@ jobs:
         VERSION="${{ steps.version.outputs.version }}"
         output_name="pyping-linux-x64-$VERSION"
         
-        # 获取证书路径
-        CERT_PATH=$(python -c "import certifi; print(certifi.where())")
-        SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
-        
         python -m nuitka \
           --standalone \
           --onefile \
@@ -78,9 +74,9 @@ jobs:
           --include-package=tcppinglib \
           --include-package=requests \
           --include-package=tqdm \
-          --include-package=certifi \
-          --include-data-file=$CERT_PATH=certifi/cacert.pem \
-          --include-data-dir=$SITE_PACKAGES/certifi=certifi \
+          --include-package=urllib3 \
+          --include-package=idna \
+          --include-package=charset-normalizer \
           --remove-output \
           --lto=yes \
           --assume-yes-for-downloads \
@@ -100,16 +96,6 @@ jobs:
         $VERSION = "${{ steps.version.outputs.version }}"
         $output_name = "pyping-windows-x64-$VERSION.exe"
         
-        # 获取证书路径和正确的certifi目录路径
-        $CERT_PATH = python -c "import certifi; print(certifi.where())"
-        $CERTIFI_DIR = python -c "import certifi, os; print(os.path.dirname(certifi.__file__))"
-        
-        # 验证路径是否存在
-        if (-not (Test-Path -Path $CERTIFI_DIR)) {
-            Write-Host "Certifi directory not found at: $CERTIFI_DIR"
-            exit 1
-        }
-        
         python -m nuitka `
           --standalone `
           --onefile `
@@ -119,9 +105,9 @@ jobs:
           --include-package=tcppinglib `
           --include-package=requests `
           --include-package=tqdm `
-          --include-package=certifi `
-          --include-data-file="$CERT_PATH=certifi/cacert.pem" `
-          --include-data-dir="$CERTIFI_DIR=certifi" `
+          --include-package=urllib3 `
+          --include-package=idna `
+          --include-package=charset-normalizer `
           --remove-output `
           --lto=yes `
           --assume-yes-for-downloads `
