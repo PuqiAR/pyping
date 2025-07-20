@@ -32,7 +32,7 @@ cd pyping
 | -f, --family   | IP版本 (4/6)            | 4      |
 | -n, --count    | 发包数量                | 4      |
 | -t             | 持续ping模式            | 关闭   |
-| -i, --interval | Ping间隔(秒)            | 1.0    |
+| -i, --interval | Ping间隔(秒)            | 0.5    |
 
 ## 使用示例
 - 基本ICMP ping测试
