@@ -9,7 +9,7 @@ import struct
 import requests
 from tqdm import tqdm
 
-version = '0.0.8'
+version = '0.0.9'
 
 from platform import system as platform_system
 from sys import exit as sys_exit

@@ -2,8 +2,8 @@ name: Build and Release
 
 on:
   push:
-    tags: ['v*.*.*']  # Trigger on version tags
-  workflow_dispatch:   # Manual trigger
+    tags: ['v*.*.*']
+  workflow_dispatch:
     inputs:
       version_tag:
         description: 'Version tag (e.g. v1.0.0), leave empty for test build'
@@ -32,19 +32,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Step to determine version (fixed bash syntax)
+    # Step to determine version (fixed)
     - name: Determine version
       id: version
       shell: bash
       run: |
         if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version_tag }}" ]]; then
-          # Manual trigger with version specified
-          VERSION="${输入版本_tag//v/}"  # Remove 'v' prefix
+          # 修正变量名：使用正确的 inputs 上下文
+          VERSION="${ { inputs.version_tag }//v/}"  # 移除 'v' 前缀
         elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-          # Automatic tag trigger
           VERSION="${GITHUB_REF#refs/tags/v}"
         else
-          # Manual trigger without version
           VERSION="0.0.0"
         fi
         echo "version=${VERSION}" >> $GITHUB_OUTPUT
@@ -61,8 +59,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install nuitka==2.0.0
         pip install -r requirements.txt
+        pip install nuitka-hints  # 安装自动分析工具
 
-    # Linux build - no .bin suffix
+    # Linux build with auto-detected includes
     - name: Linux Build
       if: runner.os == 'Linux'
       run: |
@@ -71,10 +70,19 @@ jobs:
         output_name="pyping-linux-x64-$VERSION"
         echo "Building $output_name"
         
+        # 自动分析导入并生成Nuitka参数
+        INCLUDES=$(python -m nuitka_hints pyping.py --format=nuitka)
+        echo "Auto-detected includes: $INCLUDES"
+        
+        # 添加requests证书的特殊处理
+        CERT_PATH=$(python -c "import requests; print(requests.certs.where())")
+        
         python -m nuitka \
           --standalone \
           --onefile \
           --follow-imports \
+          $INCLUDES \
+          --include-data-file=$CERT_PATH=requests/cacert.pem \
           --remove-output \
           --lto=yes \
           --assume-yes-for-downloads \
@@ -86,8 +94,11 @@ jobs:
         ls -la dist
         if [ -f "dist/$output_name" ]; then
           echo "Build successful"
-          # Make executable
           chmod +x "dist/$output_name"
+          
+          # 快速测试版本输出
+          echo "Testing version output:"
+          ./dist/$output_name --version
         else
           echo "Build failed"
           exit 1
@@ -97,7 +108,7 @@ jobs:
         shasum -a 256 * > checksums.txt
         cat checksums.txt
 
-    # Windows build
+    # Windows build with auto-detected includes
     - name: Windows Build
       if: runner.os == 'Windows'
       shell: pwsh
@@ -107,10 +118,19 @@ jobs:
         $output_name = "pyping-windows-x64-$VERSION.exe"
         Write-Host "Building $output_name"
         
+        # 自动分析导入并生成Nuitka参数
+        $INCLUDES = python -m nuitka_hints pyping.py --format=nuitka
+        Write-Host "Auto-detected includes: $INCLUDES"
+        
+        # 添加requests证书的特殊处理
+        $CERT_PATH = python -c "import requests; print(requests.certs.where())"
+        
         python -m nuitka `
           --standalone `
           --onefile `
           --follow-imports `
+          $INCLUDES `
+          --include-data-file="$CERT_PATH=requests/cacert.pem" `
           --remove-output `
           --lto=yes `
           --assume-yes-for-downloads `
@@ -122,6 +142,10 @@ jobs:
         Get-ChildItem -Path dist
         if (Test-Path -Path "dist\$output_name") {
           Write-Host "Build successful"
+          
+          # 快速测试版本输出
+          Write-Host "Testing version output:"
+          & ".\dist\$output_name" --version
         } else {
           Write-Host "Build failed"
           exit 1
@@ -143,7 +167,6 @@ jobs:
 
   create-release:
     needs: build
-    # Only create release for tag pushes
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-22.04
     permissions:
