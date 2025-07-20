@@ -8,7 +8,7 @@ import signal
 import struct
 
 
-version = '0.0.7'
+version = '0.0.6'
 
 from sys import exit as sys_exit
 from dataclasses import dataclass
