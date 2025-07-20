@@ -37,9 +37,8 @@ jobs:
       id: version
       shell: bash
       run: |
-        if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version_tag }}" ]]; then
-          # 修正变量名：使用正确的 inputs 上下文
-          VERSION="${ { inputs.version_tag }//v/}"  # 移除 'v' 前缀
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version_tag }}" ]]; then
+          VERSION="${ { github.event.inputs.version_tag }//v/}"  # 移除 'v' 前缀
         elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
           VERSION="${GITHUB_REF#refs/tags/v}"
         else
@@ -59,7 +58,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install nuitka==2.0.0
         pip install -r requirements.txt
-        pip install nuitka-hints  # 安装自动分析工具
+        
+        # 安装 pipreqs 用于分析依赖
+        pip install pipreqs
 
     # Linux build with auto-detected includes
     - name: Linux Build
@@ -70,8 +71,19 @@ jobs:
         output_name="pyping-linux-x64-$VERSION"
         echo "Building $output_name"
         
-        # 自动分析导入并生成Nuitka参数
-        INCLUDES=$(python -m nuitka_hints pyping.py --format=nuitka)
+        # 生成 requirements.txt
+        pipreqs --mode no-pin --savepath /tmp/requirements.txt .
+        
+        # 生成 Nuitka 包含参数
+        INCLUDES=""
+        while IFS= read -r package; do
+          # 提取包名 (忽略注释和空行)
+          if [[ ! "$package" =~ ^[[:space:]]*# && -n "$package" ]]; then
+            pkg_name=$(echo "$package" | awk -F'[=<>]' '{print $1}')
+            INCLUDES+=" --include-package=$pkg_name"
+          fi
+        done < /tmp/requirements.txt
+        
         echo "Auto-detected includes: $INCLUDES"
         
         # 添加requests证书的特殊处理
@@ -118,8 +130,17 @@ jobs:
         $output_name = "pyping-windows-x64-$VERSION.exe"
         Write-Host "Building $output_name"
         
-        # 自动分析导入并生成Nuitka参数
-        $INCLUDES = python -m nuitka_hints pyping.py --format=nuitka
+        # 生成 requirements.txt
+        pipreqs --mode no-pin --savepath requirements_temp.txt .
+        
+        # 生成 Nuitka 包含参数
+        $INCLUDES = ""
+        Get-Content requirements_temp.txt | ForEach-Object {
+          if ($_ -notmatch '^\s*#' -and $_.Trim() -ne '') {
+            $pkg_name = ($_ -split '[=<>]')[0].Trim()
+            $INCLUDES += " --include-package=$pkg_name"
+          }
+        }
         Write-Host "Auto-detected includes: $INCLUDES"
         
         # 添加requests证书的特殊处理
