@@ -92,7 +92,7 @@ jobs:
         cd dist
         shasum -a 256 * > checksums.txt
 
-        - name: Windows Build
+    - name: Windows Build
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
