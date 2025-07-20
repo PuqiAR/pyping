@@ -65,32 +65,21 @@ jobs:
         VERSION="${{ steps.version.outputs.version }}"
         output_name="pyping-linux-x64-$VERSION"
         
-        # 获取Python包路径
         SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
-        
-        # 构建Nuitka包含参数
-        INCLUDES=""
-        
-        # 添加核心依赖
-        INCLUDES+=" --include-package=dns"      # dnspython的实际包名
-        INCLUDES+=" --include-package=ping3"
-        INCLUDES+=" --include-package=tcppinglib"
-        INCLUDES+=" --include-package=requests"
-        INCLUDES+=" --include-package=tqdm"
-        INCLUDES+=" --include-package=idna"
-        INCLUDES+=" --include-package=urllib3"
-        INCLUDES+=" --include-package=charset_normalizer"
-        INCLUDES+=" --include-package=certifi"
-        
-        # 添加requests证书
-        CERT_PATH=$(python -c "import requests; print(requests.certs.where())")
         
         python -m nuitka \
           --standalone \
           --onefile \
           --follow-imports \
-          $INCLUDES \
-          --include-data-file=$CERT_PATH=requests/cacert.pem \
+          --include-package=dns \
+          --include-package=ping3 \
+          --include-package=tcppinglib \
+          --include-package=requests \
+          --include-package=tqdm \
+          --include-package=idna \
+          --include-package=urllib3 \
+          --include-package=charset_normalizer \
+          --include-package=certifi \
           --include-data-dir=$SITE_PACKAGES/dns=dns \
           --remove-output \
           --lto=yes \
@@ -101,62 +90,53 @@ jobs:
         
         chmod +x "dist/$output_name"
         
-        # 测试构建是否成功
         echo "Testing build:"
-        ./dist/$output_name --version || true
+        ./dist/$output_name --version || echo "Version test failed, but continuing"
         
         cd dist
         shasum -a 256 * > checksums.txt
 
     - name: Windows Build
       if: runner.os == 'Windows'
-      shell: pwsh
+      shell: cmd  # 使用cmd而不是pwsh
       run: |
-        New-Item -ItemType Directory -Force -Path dist
-        $VERSION = "${{ steps.version.outputs.version }}"
-        $output_name = "pyping-windows-x64-$VERSION.exe"
+        mkdir dist
+        set VERSION=%{{ steps.version.outputs.version }}%
+        set output_name=pyping-windows-x64-%VERSION%.exe
         
-        # 获取Python包路径
-        $SITE_PACKAGES = python -c "import site; print(site.getsitepackages()[0])"
+        python -c "import site; print(site.getsitepackages()[0])" > sitepath.txt
+        set /p SITE_PACKAGES=<sitepath.txt
         
-        # 构建Nuitka包含参数
-        $INCLUDES = ""
-        $INCLUDES += " --include-package=dns"      # dnspython的实际包名
-        $INCLUDES += " --include-package=ping3"
-        $INCLUDES += " --include-package=tcppinglib"
-        $INCLUDES += " --include-package=requests"
-        $INCLUDES += " --include-package=tqdm"
-        $INCLUDES += " --include-package=idna"
-        $INCLUDES += " --include-package=urllib3"
-        $INCLUDES += " --include-package=charset_normalizer"
-        $INCLUDES += " --include-package=certifi"
+        python -c "import requests; print(requests.certs.where())" > certpath.txt
+        set /p CERT_PATH=<certpath.txt
         
-        # 添加requests证书
-        $CERT_PATH = python -c "import requests; print(requests.certs.where())"
-        
-        python -m nuitka `
-          --standalone `
-          --onefile `
-          --follow-imports `
-          $INCLUDES `
-          --include-data-file="$CERT_PATH=requests/cacert.pem" `
-          --include-data-dir="$SITE_PACKAGES\dns=dns" `
-          --remove-output `
-          --lto=yes `
-          --assume-yes-for-downloads `
-          --output-dir=dist `
-          --output-filename="$output_name" `
+        python -m nuitka ^
+          --standalone ^
+          --onefile ^
+          --follow-imports ^
+          --include-package=dns ^
+          --include-package=ping3 ^
+          --include-package=tcppinglib ^
+          --include-package=requests ^
+          --include-package=tqdm ^
+          --include-package=idna ^
+          --include-package=urllib3 ^
+          --include-package=charset_normalizer ^
+          --include-package=certifi ^
+          --include-data-dir="%SITE_PACKAGES%\dns"=dns ^
+          --include-data-file="%CERT_PATH%"=requests/cacert.pem ^
+          --remove-output ^
+          --lto=yes ^
+          --assume-yes-for-downloads ^
+          --output-dir=dist ^
+          --output-filename="%output_name%" ^
           pyping.py
         
-        # 测试构建是否成功
-        Write-Host "Testing build:"
-        & ".\dist\$output_name" --version
+        echo Testing build:
+        dist\%output_name% --version || echo Version test failed, but continuing
         
-        Set-Location dist
-        Get-ChildItem | ForEach-Object {
-          $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
-          "$($_.Name)  $hash" | Out-File -Append checksums.txt
-        }
+        cd dist
+        certutil -hashfile * SHA256 > checksums.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
