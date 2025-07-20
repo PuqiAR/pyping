@@ -65,10 +65,11 @@ jobs:
         VERSION="${{ steps.version.outputs.version }}"
         output_name="pyping-linux-x64-$VERSION"
         
-        # 获取实际安装的包名（不带连字符）
-        CHARSET_NORM_PKG=$(python -c "import charset_normalizer; print(charset_normalizer.__name__)")
+        # 检查是否真的需要charset_normalizer
+        NEED_CHARSET_NORM=$(python -c "try: import pyping; from pyping import __imports__; print('charset_normalizer' in str(__imports__)); except: print('False')")
         
-        python -m nuitka \
+        # 构建Nuitka命令
+        NUITKA_CMD="python -m nuitka \
           --standalone \
           --onefile \
           --follow-imports \
@@ -78,14 +79,19 @@ jobs:
           --include-package=requests \
           --include-package=tqdm \
           --include-package=urllib3 \
-          --include-package=idna \
-          --include-package=$CHARSET_NORM_PKG \  # 使用实际包名
-          --remove-output \
-          --lto=yes \
-          --assume-yes-for-downloads \
-          --output-dir=dist \
-          --output-filename="$output_name" \
-          pyping.py
+          --include-package=idna"
+        
+        # 按需添加charset_normalizer
+        if [ "$NEED_CHARSET_NORM" = "True" ]; then
+          NUITKA_CMD="$NUITKA_CMD --include-package=charset_normalizer"
+        fi
+        
+        # 添加输出参数（确保最后没有空格）
+        NUITKA_CMD="$NUITKA_CMD --remove-output --lto=yes --assume-yes-for-downloads --output-dir=dist --output-filename=$output_name pyping.py"
+        
+        # 执行构建
+        echo "Executing: $NUITKA_CMD"
+        eval $NUITKA_CMD
         
         chmod +x "dist/$output_name"
         cd dist
