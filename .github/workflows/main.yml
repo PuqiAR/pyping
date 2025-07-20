@@ -2,8 +2,13 @@ name: Build and Release
 
 on:
   push:
-    tags: ['v*.*.*']
-  workflow_dispatch:
+    tags: ['v*.*.*']  # Trigger on version tags
+  workflow_dispatch:   # Manual trigger
+    inputs:
+      version_tag:
+        description: 'Version tag (e.g. v1.0.0), leave empty for test build'
+        required: false
+        default: ''
 
 env:
   PROJECT_NAME: "pyping"
@@ -27,20 +32,23 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Extract version from tag
-      if: startsWith(github.ref, 'refs/tags/')
-      id: extract-version
+    # Step to determine version (fixed bash syntax)
+    - name: Determine version
+      id: version
+      shell: bash
       run: |
-        VERSION=${GITHUB_REF#refs/tags/v}
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.version_tag }}" ]]; then
+          # Manual trigger with version specified
+          VERSION="${输入版本_tag//v/}"  # Remove 'v' prefix
+        elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          # Automatic tag trigger
+          VERSION="${GITHUB_REF#refs/tags/v}"
+        else
+          # Manual trigger without version
+          VERSION="0.0.0"
+        fi
         echo "version=${VERSION}" >> $GITHUB_OUTPUT
-        echo "Extracted version: ${VERSION}"
-
-    - name: Set default version for manual trigger
-      if: github.event_name == 'workflow_dispatch'
-      id: set-default-version
-      run: |
-        echo "version=0.0.0" >> $GITHUB_OUTPUT
-        echo "Using default version for manual build"
+        echo "Using version: ${VERSION}"
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -54,12 +62,12 @@ jobs:
         pip install nuitka==2.0.0
         pip install -r requirements.txt
 
-    # Linux build
+    # Linux build - no .bin suffix
     - name: Linux Build
       if: runner.os == 'Linux'
       run: |
         mkdir -p dist
-        VERSION="${{ steps.extract-version.outputs.version || steps.set-default-version.outputs.version }}"
+        VERSION="${{ steps.version.outputs.version }}"
         output_name="pyping-linux-x64-$VERSION"
         echo "Building $output_name"
         
@@ -78,6 +86,8 @@ jobs:
         ls -la dist
         if [ -f "dist/$output_name" ]; then
           echo "Build successful"
+          # Make executable
+          chmod +x "dist/$output_name"
         else
           echo "Build failed"
           exit 1
@@ -93,7 +103,7 @@ jobs:
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Force -Path dist
-        $VERSION = "${{ steps.extract-version.outputs.version || steps.set-default-version.outputs.version }}"
+        $VERSION = "${{ steps.version.outputs.version }}"
         $output_name = "pyping-windows-x64-$VERSION.exe"
         Write-Host "Building $output_name"
         
@@ -133,6 +143,8 @@ jobs:
 
   create-release:
     needs: build
+    # Only create release for tag pushes
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -145,25 +157,22 @@ jobs:
         pattern: "*"
         merge-multiple: true
 
-    - name: Get version for release name
-      id: get-version
+    - name: Get release version
+      id: release-version
+      shell: bash
       run: |
-        if [ "$GITHUB_REF_TYPE" == "tag" ]; then
-          VERSION=${GITHUB_REF#refs/tags/v}
-        else
-          VERSION="0.0.0"
-        fi
+        VERSION="${GITHUB_REF#refs/tags/v}"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        name: "PyPing ${{ steps.get-version.outputs.version }}"
+        name: "PyPing ${{ steps.release-version.outputs.version }}"
         body: |
           ### Build Artifacts
-          - **Windows**: pyping-windows-x64-${{ steps.get-version.outputs.version }}.exe
-          - **Linux**: pyping-linux-x64-${{ steps.get-version.outputs.version }}
+          - **Windows**: pyping-windows-x64-${{ steps.release-version.outputs.version }}.exe
+          - **Linux**: pyping-linux-x64-${{ steps.release-version.outputs.version }}
           
           ### Verification
           ```sh
