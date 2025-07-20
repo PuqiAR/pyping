@@ -4,15 +4,17 @@ import argparse
 import dns.rdatatype, dns.resolver, dns.exception
 import socket
 import ipaddress
-import tcppinglib
-import ping3
-import sys
 import signal
+import struct
+
+from sys import exit as sys_exit
 from dataclasses import dataclass
 from typing import Optional, Union, List
 from time import sleep, time
-import struct
-import select
+from select import select as select_poll
+
+from ping3 import ping as ping3_ping
+from tcppinglib import tcpping
 
 class Protocol:
     ICMP = 'icmp'
@@ -40,7 +42,6 @@ class PingResult:
     error_count: int = 0
 
 def is_valid_ip(ip_str: str) -> bool:
-    """Check if a string is a valid IP address."""
     try:
         ipaddress.ip_address(ip_str)
         return True
@@ -48,7 +49,6 @@ def is_valid_ip(ip_str: str) -> bool:
         return False
 
 def resolve_domain(host: str, custom_dns_addr: Optional[str], family: int) -> Union[List[str], int]:
-    """Resolve domain name to IP address."""
     custom_dns = dns.resolver.Resolver()
     if custom_dns_addr:
         if not is_valid_ip(custom_dns_addr):
@@ -73,7 +73,6 @@ def resolve_domain(host: str, custom_dns_addr: Optional[str], family: int) -> Un
     return -1
 
 def print_result(result: PingResult) -> None:
-    """Print ping statistics."""
     print(f"\n--- {result.info.host} ping statistics ---")
     print(f"  Protocol: {result.info.protocol.upper()}, Port: {result.info.port or 'N/A'}")
     print(f"  IPv{result.info.family}, Size: {result.info.size} bytes, TTL: {result.info.ttl}")
@@ -125,7 +124,7 @@ def ping_icmp_raw(info: PingInfo) -> Optional[float]:
         start = time()
         sock.sendto(packet, (info.host, 0))
         
-        ready = select.select([sock], [], [], info.timeout/1000)
+        ready = select_poll([sock], [], [], info.timeout/1000)
         if ready[0]:
             recv_packet, addr = sock.recvfrom(1024)
             end = time()
@@ -142,7 +141,7 @@ def ping_icmp_raw(info: PingInfo) -> Optional[float]:
 
 def ping_icmp(info: PingInfo) -> Optional[float]:
     try:
-        delay = ping3.ping(
+        delay = ping3_ping(
             info.host,
             timeout=info.timeout/1000,
             ttl=info.ttl,
@@ -160,7 +159,7 @@ def ping_tcp(info: PingInfo) -> Optional[float]:
         return None
     
     try:
-        result = tcppinglib.tcpping(
+        result = tcpping(
             info.host,
             port=info.port,
             timeout=info.timeout/1000,
@@ -207,7 +206,6 @@ def ping_udp(info: PingInfo) -> Optional[float]:
 
 
 def ping_single(info: PingInfo) -> Optional[float]:
-    """Perform a single ping based on protocol."""
     if info.protocol == Protocol.ICMP:
         # Use raw implementation for IPv6
         if info.family == 6:
@@ -340,4 +338,4 @@ def main() -> int:
     return ping_main(info, args.t if args.t else args.count, args.dns, args.interval)
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys_exit(main())
