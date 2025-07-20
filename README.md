@@ -34,7 +34,7 @@ cd pyping
 | -f, --family   | IP version (4/6)             | 4       |
 | -n, --count    | Number of packets            | 4       |
 | -t             | Continuous ping mode         | False   |
-| -i, --interval | Ping interval (seconds)      | 1.0     |
+| -i, --interval | Ping interval (seconds)      | 0.5     |
 
 ## Examples
 
