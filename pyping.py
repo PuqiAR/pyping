@@ -6,10 +6,12 @@ import socket
 import ipaddress
 import signal
 import struct
+import requests
+from tqdm import tqdm
 
+version = '0.0.8'
 
-version = '0.0.7'
-
+from platform import system as platform_system
 from sys import exit as sys_exit
 from dataclasses import dataclass
 from typing import Optional, Union, List
@@ -293,6 +295,90 @@ def ping_main(info: PingInfo, count: Union[int, bool], custom_dns_addr: Optional
     print_result(result)
     return 0 if result.success > 0 else 1
 
+def download_update(release_info:dict, use_mirrored_github:bool = False) -> int:
+    '''Download the latest release binary from GitHub releases.
+    Parameters:
+        release_info (dict): The release information from GitHub API.
+        use_mirrored_github (bool): If True, use the mirrored GitHub URL. (Fuck you GFW)
+    '''
+    os_name = platform_system().lower()
+    
+    binary_url = None
+    is_windows = 'windows' in os_name
+    
+    for release in release_info['assets']:
+        if 'pyping' in str(release['name']):
+            if os_name in release['name'].lower():
+                binary_url = release['browser_download_url']
+                break
+    if not binary_url:
+        print("No compatible assets found for update.")
+        return -1
+    if use_mirrored_github:
+        binary_url:str = binary_url.replace('github.com', 'hgithub.xyz')
+        print(f"Downloading update from (mirrored) {binary_url}...")
+    else:
+        print(f"Downloading update from {binary_url}...")
+    
+    try:
+        response = requests.get(binary_url, stream=True)
+        response.raise_for_status()
+    
+        total_size = int(response.headers.get('content-length', 0))
+        progress = tqdm(
+            total=total_size,
+            unit='B',
+            unit_scale=True,
+            desc=f'Downloading {binary_url.split("/")[-1]}'
+        )
+        with open('pyping_update' + ('.exe' if is_windows else ''), 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    progress.update(len(chunk))
+        progress.close()
+        return 0  # Success
+    except requests.RequestException as e:
+        print(f"Error downloading update: {e}")
+        if input('Using mirrored Github? (for China users) (y/n): ').strip().lower() == 'y':
+            return download_update(release_info, use_mirrored_github=True)
+        return -1
+    
+def check_update() -> int:
+    release_url = 'https://api.github.com/repos/PuqiAR/pyping/releases'
+    try:
+        response = requests.get(release_url, timeout=5)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error checking for updates: {e}")
+        return -1
+    
+    try:
+        releases = response.json()
+        latest_release = releases[0]
+        latest_version = latest_release['tag_name'].lstrip('v')
+        draft = latest_release['draft']
+        isprerelease = latest_release['prerelease']
+        
+        if latest_version > version and not draft and not isprerelease:
+            print(f"New official version available: {latest_version}")
+            print(f"Current version: {version}")
+            if input("Download? (y/n): ").strip().lower() == 'y':
+                if download_update(latest_release) == 0:
+                    print('==============')
+                    print("Download successful. Please manually reinstall and restart")
+                    return 0
+                else:
+                    print("Download failed.")
+                    return -1
+            return 0
+        else:
+            print("You are using the latest version.")
+            return 0
+    except (ValueError, KeyError) as e:
+        print(f"Error parsing release data: {e}, checking for updates failed.")
+        return -1
+    
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog='PyPing',
@@ -300,7 +386,7 @@ def main() -> int:
         epilog='Copyright©PuqiAR, 2025'
     )
     
-    parser.add_argument('host', type=str, help='Hostname or IP address to ping')
+    parser.add_argument('host', type=str, nargs='?', default=None, help='Hostname or IP address to ping')
     parser.add_argument('-p', '--protocol', default=Protocol.ICMP, 
                        choices=[Protocol.ICMP, Protocol.TCP, Protocol.UDP],
                        help='Protocol to use for ping')
@@ -328,6 +414,9 @@ def main() -> int:
     
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {version}', help='Show version and exit')
     
+    parser.add_argument('-u', '--update', action='store_true', default=False,
+                       help='Check for updates')
+    
     args = parser.parse_args()
     
     info = PingInfo(
@@ -339,7 +428,11 @@ def main() -> int:
         family=args.family,
         timeout=args.timeout
     )
-    
+    if args.update:
+        return check_update()
+    if not args.host:
+        parser.error("the following arguments are required: host")
+        return -1
     return ping_main(info, args.t if args.t else args.count, args.dns, args.interval)
 
 if __name__ == '__main__':
