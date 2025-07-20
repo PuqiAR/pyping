@@ -37,7 +37,8 @@ jobs:
       shell: bash
       run: |
         if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version_tag }}" ]]; then
-          VERSION="${ { github.event.inputs.version_tag }//v/}"
+          VERSION="${{ github.event.inputs.version_tag }}"
+          VERSION="${VERSION//v/}"
         elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
           VERSION="${GITHUB_REF#refs/tags/v}"
         else
@@ -56,7 +57,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install nuitka==2.0.0
         pip install -r requirements.txt
-        pip install pipreqs
 
     - name: Linux Build
       if: runner.os == 'Linux'
@@ -64,28 +64,47 @@ jobs:
         mkdir -p dist
         VERSION="${{ steps.version.outputs.version }}"
         output_name="pyping-linux-x64-$VERSION"
-        pipreqs --mode no-pin --savepath /tmp/requirements.txt .
+        
+        # 获取Python包路径
+        SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+        
+        # 构建Nuitka包含参数
         INCLUDES=""
-        while IFS= read -r package; do
-          if [[ ! "$package" =~ ^[[:space:]]*# && -n "$package" ]]; then
-            pkg_name=$(echo "$package" | awk -F'[=<>]' '{print $1}' | tr '[:upper:]' '[:lower:]')
-            INCLUDES+=" --include-package=$pkg_name"
-          fi
-        done < /tmp/requirements.txt
+        
+        # 添加核心依赖
+        INCLUDES+=" --include-package=dns"      # dnspython的实际包名
+        INCLUDES+=" --include-package=ping3"
+        INCLUDES+=" --include-package=tcppinglib"
+        INCLUDES+=" --include-package=requests"
+        INCLUDES+=" --include-package=tqdm"
+        INCLUDES+=" --include-package=idna"
+        INCLUDES+=" --include-package=urllib3"
+        INCLUDES+=" --include-package=charset_normalizer"
+        INCLUDES+=" --include-package=certifi"
+        
+        # 添加requests证书
         CERT_PATH=$(python -c "import requests; print(requests.certs.where())")
+        
         python -m nuitka \
           --standalone \
           --onefile \
           --follow-imports \
           $INCLUDES \
           --include-data-file=$CERT_PATH=requests/cacert.pem \
+          --include-data-dir=$SITE_PACKAGES/dns=dns \
           --remove-output \
           --lto=yes \
           --assume-yes-for-downloads \
           --output-dir=dist \
           --output-filename="$output_name" \
           pyping.py
+        
         chmod +x "dist/$output_name"
+        
+        # 测试构建是否成功
+        echo "Testing build:"
+        ./dist/$output_name --version || true
+        
         cd dist
         shasum -a 256 * > checksums.txt
 
@@ -96,27 +115,43 @@ jobs:
         New-Item -ItemType Directory -Force -Path dist
         $VERSION = "${{ steps.version.outputs.version }}"
         $output_name = "pyping-windows-x64-$VERSION.exe"
-        pipreqs --mode no-pin --savepath requirements_temp.txt .
+        
+        # 获取Python包路径
+        $SITE_PACKAGES = python -c "import site; print(site.getsitepackages()[0])"
+        
+        # 构建Nuitka包含参数
         $INCLUDES = ""
-        Get-Content requirements_temp.txt | ForEach-Object {
-          if ($_ -notmatch '^\s*#' -and $_.Trim() -ne '') {
-            $pkg_name = ($_ -split '[=<>]')[0].Trim().ToLower()
-            $INCLUDES += " --include-package=$pkg_name"
-          }
-        }
+        $INCLUDES += " --include-package=dns"      # dnspython的实际包名
+        $INCLUDES += " --include-package=ping3"
+        $INCLUDES += " --include-package=tcppinglib"
+        $INCLUDES += " --include-package=requests"
+        $INCLUDES += " --include-package=tqdm"
+        $INCLUDES += " --include-package=idna"
+        $INCLUDES += " --include-package=urllib3"
+        $INCLUDES += " --include-package=charset_normalizer"
+        $INCLUDES += " --include-package=certifi"
+        
+        # 添加requests证书
         $CERT_PATH = python -c "import requests; print(requests.certs.where())"
+        
         python -m nuitka `
           --standalone `
           --onefile `
           --follow-imports `
           $INCLUDES `
           --include-data-file="$CERT_PATH=requests/cacert.pem" `
+          --include-data-dir="$SITE_PACKAGES\dns=dns" `
           --remove-output `
           --lto=yes `
           --assume-yes-for-downloads `
           --output-dir=dist `
           --output-filename="$output_name" `
           pyping.py
+        
+        # 测试构建是否成功
+        Write-Host "Testing build:"
+        & ".\dist\$output_name" --version
+        
         Set-Location dist
         Get-ChildItem | ForEach-Object {
           $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
