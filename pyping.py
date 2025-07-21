@@ -380,7 +380,6 @@ def check_update() -> int:
         return -1
     
 def main() -> int:
-    fix_cert()
     parser = argparse.ArgumentParser(
         prog='PyPing',
         description='A network testing tool supporting ICMP, TCP and UDP',

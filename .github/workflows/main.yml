@@ -58,11 +58,6 @@ jobs:
         pip install nuitka==2.0.0
         pip install -r requirements.txt
 
-    - name: Apply certifi fix
-      run: |
-        # 在代码开头添加证书修复代码
-        sed -i '1i import os\nimport sys\nimport certifi\n\n# Fix for Nuitka onefile build\nif getattr(sys, "frozen", False):\n    os.environ["REQUESTS_CA_BUNDLE"] = os.path.join(\n        sys._MEIPASS,\n        "certifi",\n        "cacert.pem"\n    )\n    os.environ["SSL_CERT_FILE"] = os.path.join(\n        sys._MEIPASS,\n        "certifi",\n        "cacert.pem"\n    )\n' pyping.py
-
     - name: Linux Build
       if: runner.os == 'Linux'
       run: |
@@ -72,21 +67,11 @@ jobs:
         
         python -m nuitka \
           --standalone \
-          --onefile \
-          --follow-imports \
-          --include-package=dns \
-          --include-package=ping3 \
-          --include-package=tcppinglib \
-          --include-package=requests \
-          --include-package=tqdm \
-          --include-package=urllib3 \
-          --include-package=idna \
           --remove-output \
           --lto=yes \
           --assume-yes-for-downloads \
           --output-dir=dist \
           --output-filename="$output_name" \
-          --include-package-data=certifi \
           pyping.py
         
         chmod +x "dist/$output_name"
@@ -103,21 +88,11 @@ jobs:
         
         python -m nuitka ^
           --standalone ^
-          --onefile ^
-          --follow-imports ^
-          --include-package=dns ^
-          --include-package=ping3 ^
-          --include-package=tcppinglib ^
-          --include-package=requests ^
-          --include-package=tqdm ^
-          --include-package=urllib3 ^
-          --include-package=idna ^
           --remove-output ^
           --lto=yes ^
           --assume-yes-for-downloads ^
           --output-dir=dist ^
           --output-filename="%output_name%" ^
-          --include-package-data=certifi ^
           pyping.py
         
         cd dist
