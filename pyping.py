@@ -13,7 +13,7 @@ import json
 from tqdm import tqdm
 from pathlib import Path
 
-version = '0.1.4'
+version = '0.1.32'
 
 verbose_build_info_file = 'build_info.json'
 
