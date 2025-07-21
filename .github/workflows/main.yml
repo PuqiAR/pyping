@@ -164,6 +164,21 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        name: "PyPing ${{ env.VERSION }}"
+        name: "PyPing ${{ steps.release-version.outputs.version }}"
+        body: |
+          ### Build Artifacts
+          - **Windows**: pyping-windows-x64-${{ steps.release-version.outputs.version }}.exe
+          - **Linux**: pyping-linux-x64-${{ steps.release-version.outputs.version }}
+          
+          ### Verification
+          ```sh
+          # Linux
+          shasum -a 256 <file>
+          
+          # Windows
+          certutil -hashfile <file> SHA256
+          ```
         files: |
           artifacts/**/*
+        draft: false
+        prerelease: ${{ contains(github.ref, '-') }}

@@ -13,7 +13,7 @@ import json
 from tqdm import tqdm
 from pathlib import Path
 
-version = '0.1.35'
+version = '0.1.37'
 
 verbose_build_info_file = 'build_info.json'
 
@@ -427,7 +427,7 @@ def main() -> int:
     if _info:
         build_info.update(_info)
     else:
-        print(f'PyPing v{version}:')
+        print(f'PyPing v{version}:\n')
         print('**Warning: Failed to load build information\n')
     
     parser = argparse.ArgumentParser(
