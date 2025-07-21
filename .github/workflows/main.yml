@@ -47,6 +47,7 @@ jobs:
           VERSION="0.0.0"
         fi
         echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
     # Linux-specific steps
     - name: Generate build info (Linux)
@@ -98,8 +99,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         mkdir -p dist
-        VERSION="${{ steps.version.outputs.version }}"
-        output_name="pyping-linux-x64-$VERSION"
+        output_name="pyping-linux-x64-${{ env.VERSION }}"
         
         python -m nuitka \
           --standalone \
@@ -114,7 +114,7 @@ jobs:
         
         chmod +x "dist/$output_name"
         cd dist
-        shasum -a 256 * > checksums.txt
+        shasum -a 256 "$output_name" > "checksum_linux_${{ env.VERSION }}.txt"
 
     # Windows build with Nuitka
     - name: Windows Build
@@ -122,8 +122,7 @@ jobs:
       shell: cmd
       run: |
         mkdir dist
-        set VERSION=%{{ steps.version.outputs.version }}%
-        set output_name=pyping-windows-x64-%VERSION%.exe
+        set "output_name=pyping-windows-x64-${{ env.VERSION }}.exe"
         
         python -m nuitka ^
           --standalone ^
@@ -137,12 +136,12 @@ jobs:
           pyping.py
         
         cd dist
-        certutil -hashfile %output_name% SHA256 > checksums.txt
+        certutil -hashfile "%output_name%" SHA256 > "checksum_windows_${{ env.VERSION }}.txt"
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.platform }}
+        name: ${{ matrix.platform }}_build
         path: dist/
         retention-days: 3
 
@@ -158,13 +157,13 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: artifacts
-        pattern: "*"
+        pattern: "*_build"
         merge-multiple: true
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        name: "PyPing ${{ steps.version.outputs.version }}"
+        name: "PyPing ${{ env.VERSION }}"
         files: |
           artifacts/**/*

@@ -13,7 +13,7 @@ import json
 from tqdm import tqdm
 from pathlib import Path
 
-version = '0.1.32'
+version = '0.1.35'
 
 verbose_build_info_file = 'build_info.json'
 
@@ -414,12 +414,12 @@ def format_build_info(info: dict) -> str:
         return "No build information available."
     
     return f'''
-    Build Information:
-        Version: {info.get('version', 'N/A')},
-        Build Date: {info.get('build_date', 'N/A')},
-        Git SHA: {info.get('git_sha', 'N/A')},
-        Build Number: {info.get('build_number', 'N/A')},
-        Platform: {info.get('platform', 'N/A')}
+    Build Information:\n
+        Version: {info.get('version', 'N/A')},\n
+        Build Date: {info.get('build_date', 'N/A')},\n
+        Git SHA: {info.get('git_sha', 'N/A')},\n
+        Build Number: {info.get('build_number', 'N/A')},\n
+        Platform: {info.get('platform', 'N/A')}\n
     '''
 
 def main() -> int:
