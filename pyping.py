@@ -11,6 +11,19 @@ from tqdm import tqdm
 
 version = '0.1.3'
 
+import sys
+from os import environ as os_environ
+import os.path
+
+def fix_cert():
+    if getattr(sys, 'frozen', False):
+        os_environ['REQUESTS_CA_BUNDLE'] = os.path.join(
+            sys._MEIPASS,
+            'certifi',
+            'cacert.pem'
+        )
+        os_environ['SSL_CERT_FILE'] = os_environ['REQUESTS_CA_BUNDLE']
+
 from platform import system as platform_system
 from sys import exit as sys_exit
 from dataclasses import dataclass
@@ -380,6 +393,7 @@ def check_update() -> int:
         return -1
     
 def main() -> int:
+    fix_cert()
     parser = argparse.ArgumentParser(
         prog='PyPing',
         description='A network testing tool supporting ICMP, TCP and UDP',

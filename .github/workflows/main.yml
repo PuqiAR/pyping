@@ -95,6 +95,8 @@ jobs:
         set VERSION=%{{ steps.version.outputs.version }}%
         set output_name=pyping-windows-x64-%VERSION%.exe
         
+        FOR /F %%i IN ('python -c "import certifi; print(certifi.__file__.rsplit('\\\\', 1)[0])"') DO set CERTIFI_PATH=%%i
+        
         python -m nuitka ^
           --standalone ^
           --onefile ^
@@ -111,7 +113,7 @@ jobs:
           --assume-yes-for-downloads ^
           --output-dir=dist ^
           --output-filename="%output_name%" ^
-          --include-data-dir=%PYTHON%\Lib\site-packages\certifi=certifi ^
+          --include-data-dir="%CERTIFI_PATH%"=certifi ^
           pyping.py
         
         cd dist
