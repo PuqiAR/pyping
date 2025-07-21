@@ -413,13 +413,12 @@ def format_build_info(info: dict) -> str:
     if not info:
         return "No build information available."
     
-    return f'''
-    Build Information:\n
-        Version: {info.get('version', 'N/A')},\n
-        Build Date: {info.get('build_date', 'N/A')},\n
-        Git SHA: {info.get('git_sha', 'N/A')},\n
-        Build Number: {info.get('build_number', 'N/A')},\n
-        Platform: {info.get('platform', 'N/A')}\n
+    return f'''Build Information:
+    Version: {info.get('version', 'N/A')},
+    Build Date: {info.get('build_date', 'N/A')},
+    Git SHA: {info.get('git_sha', 'N/A')},
+    Build Number: {info.get('build_number', 'N/A')},
+    Platform: {info.get('platform', 'N/A')}
     '''
 
 def main() -> int:
@@ -464,9 +463,9 @@ def main() -> int:
                        help='Interval between pings in seconds (default: 0.5)')
     
     def format_version_info():
-        return f"v{version}\n{format_build_info(build_info)}"
+        return f"PyPing v{version}\n{format_build_info(build_info)}"
     
-    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {format_version_info()}', help='Show version and exit')
+    parser.add_argument('-v', '--version', action='store_true', default=False, help='Show version and exit')
     
     parser.add_argument('-u', '--update', action='store_true', default=False,
                        help='Check for updates')
@@ -482,6 +481,9 @@ def main() -> int:
         family=args.family,
         timeout=args.timeout
     )
+    if args.version:
+        print(format_version_info())
+        return 0
     if args.update:
         return check_update()
     if not args.host:
