@@ -1,4 +1,5 @@
-# Pyping version 0.2 by PuqiAR
+# PyPing - Advanced Python Network Testing Utility
+# Copyright (c) 2025 PuqiAR
 
 import argparse
 import dns.rdatatype, dns.resolver, dns.exception
@@ -7,9 +8,38 @@ import ipaddress
 import signal
 import struct
 import requests
+import sys
+import json
 from tqdm import tqdm
+from pathlib import Path
 
-version = '0.1.3'
+version = '0.1.4'
+
+verbose_build_info_file = 'build_info.json'
+
+def get_verbose_build_info(file_name: str = verbose_build_info_file):
+    try:
+        if getattr(sys, 'frozen', False):
+            base_path = Path(sys._MEIPASS)
+        else:
+            base_path = Path(__file__).parent
+        
+        info_path = base_path / file_name
+        if not info_path.exists():
+            return None
+
+        with info_path.open() as f:
+            return json.load(f)
+    except:
+        return None
+
+build_info = {
+    'version' : '',
+    'build_date' : '',
+    'git_sha' : '',
+    'build_number' : '',
+    'platform' : ''
+}
 
 from platform import system as platform_system
 from sys import exit as sys_exit
@@ -379,7 +409,28 @@ def check_update() -> int:
         print(f"Error parsing release data: {e}, checking for updates failed.")
         return -1
     
+def format_build_info(info: dict) -> str:
+    if not info:
+        return "No build information available."
+    
+    return f'''
+    Build Information:
+        Version: {info.get('version', 'N/A')},
+        Build Date: {info.get('build_date', 'N/A')},
+        Git SHA: {info.get('git_sha', 'N/A')},
+        Build Number: {info.get('build_number', 'N/A')},
+        Platform: {info.get('platform', 'N/A')}
+    '''
+
 def main() -> int:
+    global build_info
+    _info = get_verbose_build_info()
+    if _info:
+        build_info.update(_info)
+    else:
+        print(f'PyPing v{version}:')
+        print('**Warning: Failed to load build information\n')
+    
     parser = argparse.ArgumentParser(
         prog='PyPing',
         description='A network testing tool supporting ICMP, TCP and UDP',
@@ -412,7 +463,10 @@ def main() -> int:
     parser.add_argument('-i', '--interval', type=float, default=0.5,
                        help='Interval between pings in seconds (default: 0.5)')
     
-    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {version}', help='Show version and exit')
+    def format_version_info():
+        return f"v{version}\n{format_build_info(build_info)}"
+    
+    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {format_version_info()}', help='Show version and exit')
     
     parser.add_argument('-u', '--update', action='store_true', default=False,
                        help='Check for updates')

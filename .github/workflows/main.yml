@@ -31,6 +31,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed to get git history for SHA
 
     - name: Determine version
       id: version
@@ -45,6 +47,27 @@ jobs:
           VERSION="0.0.0"
         fi
         echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+    - name: Get current date
+      id: date
+      run: echo "date=$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+
+    - name: Get git SHA
+      id: git_sha
+      run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Generate build info JSON
+      run: |
+        cat <<EOF > build_info.json
+        {
+          "version": "${{ steps.version.outputs.version }}",
+          "build_date": "${{ steps.date.outputs.date }}",
+          "git_sha": "${{ steps.git_sha.outputs.sha }}",
+          "build_number": "${{ github.run_number }}",
+          "platform": "${{ matrix.platform }}"
+        }
+        EOF
+        cat build_info.json
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -64,6 +87,7 @@ jobs:
         VERSION="${{ steps.version.outputs.version }}"
         output_name="pyping-linux-x64-$VERSION"
         
+        # Include build_info.json as a data file
         python -m nuitka \
           --standalone \
           --onefile \
@@ -72,6 +96,7 @@ jobs:
           --assume-yes-for-downloads \
           --output-dir=dist \
           --output-filename="$output_name" \
+          --include-data-file=build_info.json=build_info.json \
           pyping.py
         
         chmod +x "dist/$output_name"
@@ -86,6 +111,7 @@ jobs:
         set VERSION=%{{ steps.version.outputs.version }}%
         set output_name=pyping-windows-x64-%VERSION%.exe
         
+        # Include build_info.json as a data file
         python -m nuitka ^
           --standalone ^
           --onefile ^
@@ -94,6 +120,7 @@ jobs:
           --assume-yes-for-downloads ^
           --output-dir=dist ^
           --output-filename="%output_name%" ^
+          --include-data-file=build_info.json=build_info.json ^
           pyping.py
         
         cd dist
