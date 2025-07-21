@@ -58,6 +58,11 @@ jobs:
         pip install nuitka==2.0.0
         pip install -r requirements.txt
 
+    - name: Apply certifi fix
+      run: |
+        # 在代码开头添加证书修复代码
+        sed -i '1i import os\nimport sys\nimport certifi\n\n# Fix for Nuitka onefile build\nif getattr(sys, "frozen", False):\n    os.environ["REQUESTS_CA_BUNDLE"] = os.path.join(\n        sys._MEIPASS,\n        "certifi",\n        "cacert.pem"\n    )\n    os.environ["SSL_CERT_FILE"] = os.path.join(\n        sys._MEIPASS,\n        "certifi",\n        "cacert.pem"\n    )\n' pyping.py
+
     - name: Linux Build
       if: runner.os == 'Linux'
       run: |
@@ -81,6 +86,7 @@ jobs:
           --assume-yes-for-downloads \
           --output-dir=dist \
           --output-filename="$output_name" \
+          --include-package-data=certifi \
           pyping.py
         
         chmod +x "dist/$output_name"
@@ -94,8 +100,6 @@ jobs:
         mkdir dist
         set VERSION=%{{ steps.version.outputs.version }}%
         set output_name=pyping-windows-x64-%VERSION%.exe
-        
-        FOR /F %%i IN ('python -c "import certifi; print(certifi.__file__.rsplit('\\\\', 1)[0])"') DO set CERTIFI_PATH=%%i
         
         python -m nuitka ^
           --standalone ^
@@ -113,7 +117,7 @@ jobs:
           --assume-yes-for-downloads ^
           --output-dir=dist ^
           --output-filename="%output_name%" ^
-          --include-data-dir="%CERTIFI_PATH%"=certifi ^
+          --include-package-data=certifi ^
           pyping.py
         
         cd dist
