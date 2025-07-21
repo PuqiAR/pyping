@@ -57,4 +57,4 @@ cd pyping
 See requirements.txt for dependencies
 
 ## License
-MIT License © 2023 PuqiAR
+MIT License © 2025 PuqiAR

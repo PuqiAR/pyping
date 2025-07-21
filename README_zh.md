@@ -54,4 +54,4 @@ cd pyping
 详见requirements.txt文件
 
 ## 许可证
-MIT 许可证 © 2023 PuqiAR
+MIT 许可证 © 2025 PuqiAR
