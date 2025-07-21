@@ -67,6 +67,7 @@ jobs:
         
         python -m nuitka \
           --standalone \
+          --onefile \
           --remove-output \
           --lto=yes \
           --assume-yes-for-downloads \
@@ -88,6 +89,7 @@ jobs:
         
         python -m nuitka ^
           --standalone ^
+          --onefile ^
           --remove-output ^
           --lto=yes ^
           --assume-yes-for-downloads ^
