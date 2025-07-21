@@ -89,7 +89,7 @@ jobs:
 
     - name: Windows Build
       if: runner.os == 'Windows'
-      shell: cmd  # 使用更可靠的cmd
+      shell: cmd
       run: |
         mkdir dist
         set VERSION=%{{ steps.version.outputs.version }}%
@@ -111,6 +111,7 @@ jobs:
           --assume-yes-for-downloads ^
           --output-dir=dist ^
           --output-filename="%output_name%" ^
+          --include-data-dir=%PYTHON%\Lib\site-packages\certifi=certifi ^
           pyping.py
         
         cd dist
