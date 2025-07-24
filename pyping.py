@@ -83,28 +83,36 @@ def is_valid_ip(ip_str: str) -> bool:
     except ValueError:
         return False
 
-def resolve_domain(host: str, custom_dns_addr: Optional[str], family: int) -> Union[List[str], int]:
+def resolve_domain(host: str, custom_dns_addr: Optional[str], family: int, is_specified_family: bool) -> Union[List[str], int]:
     custom_dns = dns.resolver.Resolver()
     if custom_dns_addr:
-        if not is_valid_ip(custom_dns_addr):
-            print(f"Invalid DNS server address: {custom_dns_addr}")
-            return -1
+        # if not is_valid_ip(custom_dns_addr):
+        #     print(f"Invalid DNS server address: {custom_dns_addr}")
+        #     return -1
         custom_dns.nameservers = [custom_dns_addr]
     
     query_type = dns.rdatatype.A if family == 4 else dns.rdatatype.AAAA
-    
-    try:
+    def try_resolve():
         answer = custom_dns.resolve(host, query_type)
         return [str(r) for r in answer]
+    try:
+        return try_resolve()
     except dns.resolver.NoAnswer:
-        print(f"Domain '{host}' has no {'IPv4' if family == 4 else 'IPv6'} records")
+        if not is_specified_family:
+            if family == 4:
+                family = 6
+            else:
+                family = 4
+            print(f"Domain '{host}' has no {'IPv4' if family == 4 else 'IPv6'} records, trying the other family...")
+            return resolve_domain(host, custom_dns_addr, family, is_specified_family)
+        else:
+            print (f"Domain '{host}' has no {'IPv4' if family == 4 else 'IPv6'} records")
     except dns.resolver.NXDOMAIN:
         print(f"Domain '{host}' does not exist")
     except dns.exception.Timeout:
         print("DNS server timeout")
     except Exception as e:
         print(f"DNS resolution error: {e}")
-    
     return -1
 
 def print_result(result: PingResult) -> None:
@@ -265,9 +273,15 @@ def ping_main(info: PingInfo, count: Union[int, bool], custom_dns_addr: Optional
     
     signal.signal(signal.SIGINT, signal_handler)
     
+    # print('info.family:', info.family)
+    
+    is_specified_family = info.family is not None
+    if not is_specified_family:
+        info.family = 4
+    
     # Resolve
     if not is_valid_ip(info.host):
-        answer = resolve_domain(info.host, custom_dns_addr, info.family)
+        answer = resolve_domain(info.host, custom_dns_addr, info.family, is_specified_family)
         if answer == -1:
             return -1
         
@@ -446,7 +460,7 @@ def main() -> int:
                        help='Time to live')
     parser.add_argument('--size', type=int, default=32,
                        help='Packet size (bytes)')
-    parser.add_argument('-f', '--family', type=int, default=4, choices=[4, 6],
+    parser.add_argument('-f', '--family', type=int, choices=[4, 6],
                        help='IP family (4 or 6)')
     parser.add_argument('--dns', type=str, default=None,
                        help='Custom DNS server address')
